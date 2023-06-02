@@ -1,20 +1,7 @@
-# Sample Hardhat Project
-
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a script that deploys that contract.
-
-Try running some of the following tasks:
-
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat run scripts/deploy.js
-```
-
 ## 想法：一个链上网格交易合约
 
 1,创建网格动作情况分析：
+```shell
     1）usdc:100%,eth:0%
         不做其他处理，记录当前价格，如果价格下跌到买点就买入
         order{
@@ -63,3 +50,4 @@ npx hardhat run scripts/deploy.js
         不做其他处理，记录当前价格，如果价格上涨到卖点就卖出
     3）usdc:30%,eth:70%
         不做其他处理，记录当前价格，如果价格上涨到卖点就卖出
+```
