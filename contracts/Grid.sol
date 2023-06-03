@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 // 写到后边发现之前设想的方式存在问题，如果用一个订单来记录买与卖两部分数据不大好，
 //不大好体现在更复杂，数据显得比较乱，所以决定把买与卖的数据分开为两个订单来存储，
 //这样也直接实现了，抄底策略跟卖出策略
+
 contract Grid is Operator,ReentrancyGuard{
 
 
@@ -19,17 +20,21 @@ contract Grid is Operator,ReentrancyGuard{
     uint256 public immutable interval_price_min;
     uint256 public immutable grid_amount_min;
 
+    uint256 public base_bounty_eth;
+    uint256 public base_bounty_stable;
+
     Order[] public orders;
     Transaction[] public transactions;
     mapping (uint256 => address) public orderToOwner;
     mapping (uint256 => uint256[]) public orderToTransaction;
 
     enum Side {Buy,Sell,Bilateral}
-    enum Status {InPosition,Over}
+    enum TxStatus {InPosition,Over}
+    enum OrderStatus {Open,Stop,Close}
 
     struct Transaction {
         Side side;
-        Status status;
+        TxStatus status;
         uint256 order_id;
         uint256 selling_price;
         uint256 cost_price;
@@ -39,6 +44,7 @@ contract Grid is Operator,ReentrancyGuard{
 
     struct  Order {
         Side side;
+        OrderStatus status;
         uint256 min_price;
         uint256 max_price;
         uint256 init_amount;
@@ -49,16 +55,83 @@ contract Grid is Operator,ReentrancyGuard{
         uint256 balance;
     }
 
-    constructor(address _stable,uint256 _interval_price_min,uint256 _grid_amount_min){
+    constructor(
+        address _stable,
+        uint256 _interval_price_min,
+        uint256 _grid_amount_min,
+        uint256 _base_bounty_eth,
+        uint256 _base_bounty_stable){
         stable = _stable;
         interval_price_min = _interval_price_min;
         grid_amount_min = _grid_amount_min;
+        base_bounty_eth = _base_bounty_eth;
+        base_bounty_stable = _base_bounty_stable;
     }
+
+    function stopOrder(uint256 _order_id)external nonReentrant {
+        Order storage order = orders[_order_id];
+        require(order.min_price > 0,"order dose not exist");
+        require(order.status == OrderStatus.Open,"order not opened");
+        require(orderToOwner[_order_id] == _msgSender(),"not your order");
+        order.status = OrderStatus.Stop;
+        //todo emit event
+    }
+
+    function closeOrder(uint256 _order_id)external nonReentrant {
+        Order storage order = orders[_order_id];
+        require(order.min_price > 0,"order dose not exist");
+        require(orderToOwner[_order_id] == _msgSender(),"not your order");
+        _closeOrder(order);
+        _forceClosePosition(orderToTransaction[_order_id]);
+        
+    }
+
+    function _closeOrder(Order storage order)internal {
+        require(order.status != OrderStatus.Close,"order is closed");
+        order.status = OrderStatus.Close;
+        //todo emit event
+        if(order.balance > 0){
+            if(order.side == Side.Buy){
+                IERC20(stable).transfer(_msgSender(),order.balance);
+            }else{
+                payable(_msgSender()).transfer(order.balance);
+            }
+        }
+        order.balance = 0;
+    }
+
+    function _forceClosePosition(uint256[] memory _transaction_ids)internal {
+        uint256 eth_amount;
+        uint256 stable_amount;
+        for(uint256 i = 0; i < _transaction_ids.length; ++i){
+            Transaction storage transaction = transactions[_transaction_ids[i]];
+            if(transaction.status == TxStatus.InPosition){
+                if(transaction.side == Side.Buy){
+                    eth_amount += transaction.amount - base_bounty_eth;
+                    payable(transaction.creator).transfer(base_bounty_eth);
+                }else{
+                    stable_amount += transaction.amount - base_bounty_stable;
+                    IERC20(stable).transfer(transaction.creator,base_bounty_stable);
+                }
+                transaction.status = TxStatus.Over;
+                //todo emit event
+            }
+        }
+        if(eth_amount > 0){
+            payable(_msgSender()).transfer(eth_amount);
+        }
+        if(stable_amount > 0){
+            IERC20(stable).transfer(_msgSender(),stable_amount);
+        }
+    }
+
+ 
+
 
     function closePosition(uint256 _transaction_id)external nonReentrant{
         Transaction storage transaction = transactions[_transaction_id];
         require(transaction.amount > 0,"position dose not exist");
-        require(transaction.status == Status.InPosition,"position has been close");
+        require(transaction.status == TxStatus.InPosition,"position has been close");
         uint256 current_price = _getEthPrice();
         Order storage order = orders[transaction.order_id];
         if(transaction.side == Side.Sell){
@@ -72,7 +145,12 @@ contract Grid is Operator,ReentrancyGuard{
                 bounty = income * 100/1000;
             }
             payable(_msgSender()).transfer(bounty);
-            order.balance += eth_amount - bounty;
+            order.last_price = transaction.amount/eth_amount;
+            if(order.status == OrderStatus.Close){
+                payable(orderToOwner[transaction.order_id]).transfer(eth_amount - bounty);
+            }else {
+                order.balance += eth_amount - bounty;
+            }
         }else{
             require(current_price > transaction.cost_price - order.interval_price,
                                     "The current price is no longer in the closing range");
@@ -84,9 +162,17 @@ contract Grid is Operator,ReentrancyGuard{
                 bounty = income * 100/1000;
             }
             IERC20(stable).transfer(_msgSender(),bounty);
+            order.last_price = stable_amount/transaction.amount;
+
+            if(order.status == OrderStatus.Close){
+                IERC20(stable).transfer(orderToOwner[transaction.order_id],stable_amount - bounty);
+            }else {
+                order.balance += stable_amount - bounty;
+            }
             order.balance += stable_amount - bounty;
         }
-        transaction.status = Status.Over;
+
+        transaction.status = TxStatus.Over;
 
         //todo emit event
     }
@@ -95,6 +181,7 @@ contract Grid is Operator,ReentrancyGuard{
     function buy(uint256 _order_id)external nonReentrant{
         Order storage order = orders[_order_id];
         require(order.min_price > 0,"order dose not exist");
+        require(order.status == OrderStatus.Open,"order not opened");
         uint256 current_price = _getEthPrice();
         require(current_price >= order.min_price && current_price <= order.max_price,"the price exceeds the order range");
         require(order.side == Side.Buy,"order dose not exist");
@@ -107,7 +194,7 @@ contract Grid is Operator,ReentrancyGuard{
 
         transactions[transactions.length] = Transaction(
             Side.Buy,
-            Status.InPosition,
+            TxStatus.InPosition,
             _order_id,
             0,
             order.last_price,
@@ -122,6 +209,7 @@ contract Grid is Operator,ReentrancyGuard{
     function sell(uint256 _order_id)external nonReentrant{
         Order storage order = orders[_order_id];
         require(order.min_price > 0,"order dose not exist");
+        require(order.status == OrderStatus.Open,"order not opened");
         uint256 current_price = _getEthPrice();
         require(current_price >= order.min_price && current_price <= order.max_price,"the price exceeds the order range");
         require(order.side == Side.Sell,"order dose not exist");
@@ -133,7 +221,7 @@ contract Grid is Operator,ReentrancyGuard{
         order.last_price = stable_amount/order.share_amount;
         transactions[transactions.length] = Transaction(
             Side.Sell,
-            Status.InPosition,
+            TxStatus.InPosition,
             _order_id,
             0,
             order.last_price,
@@ -187,6 +275,7 @@ contract Grid is Operator,ReentrancyGuard{
 
         orders[orders.length] = Order(
             Side.Sell,
+            OrderStatus.Open,
             _min_price,
             _max_price,
             _init_amount,
@@ -215,6 +304,7 @@ contract Grid is Operator,ReentrancyGuard{
         IERC20(stable).transferFrom(_msgSender(),address(this),_init_amount);
         orders[orders.length] = Order(
             Side.Buy,
+            OrderStatus.Open,
             _min_price,
             _max_price,
             _init_amount,
