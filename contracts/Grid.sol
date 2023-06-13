@@ -3,13 +3,14 @@ pragma solidity ^0.7.6;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-periphery/contracts/libraries/OracleLibrary.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "./IDecimalERC20.sol";
 import "./SwapRouter.sol";
+import "hardhat/console.sol";
 
 
 
@@ -22,7 +23,7 @@ import "./SwapRouter.sol";
 //不大好体现在更复杂，数据显得比较乱，所以决定把买与卖的数据分开为两个订单来存储，
 //这样也直接实现了，抄底策略跟卖出策略
 
-contract Grid is Ownable, ReentrancyGuard, SwapRouter{
+contract Grid is Context, ReentrancyGuard, SwapRouter{
 
     address public immutable weth;
     address public immutable stable;//稳定币，usds
@@ -101,6 +102,7 @@ contract Grid is Ownable, ReentrancyGuard, SwapRouter{
         require(_interval_price >= interval_price_min,'price interval is too small');
 
         uint256 current_price = _getEthPrice();
+
         require(current_price  <= _max_price 
                 && current_price  >= _min_price,'price range is too small');
         require(_share_amount <= _init_amount/grid_amount_min ,'too few grids');
@@ -165,8 +167,7 @@ contract Grid is Ownable, ReentrancyGuard, SwapRouter{
         uint256 _init_price,
         uint256 _interval_price,
         uint256 _share_amount)internal{
-
-        orders[orders.length] = Order(
+        orders.push(Order(
             Side.Buy,
             OrderStatus.Open,
             _min_price,
@@ -177,8 +178,7 @@ contract Grid is Ownable, ReentrancyGuard, SwapRouter{
             _interval_price,
             _share_amount,
             _init_amount
-        );
-        
+        ));
         orderToOwner[orders.length - 1] = _msgSender();
         emit CreateOrder(_msgSender(),orders.length - 1,_init_amount,Side.Buy);
     }

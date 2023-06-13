@@ -19,8 +19,8 @@ async function main() {
         uint256 _base_bounty_stable
    */
   const factory = "0x0227628f3F023bb0B980b67D528571c95c6DaC1c";
-  const weth = "0x5c08e6bcb3289d2847483ba51Baf522c97b2d6cC";
-  const stable = "0x216340dFD7479b49CFB26266014C48E5202A6B79";
+  const weth = "0xbF820766ec149C9220D97242Da58e9Ece20CC516";
+  const stable = "0x486022ECaF84E55989B94cF3424430d11c39Ba25";
   const fee = "500";
   const interval_price_min = "30";
   const grid_amount_min = "5";

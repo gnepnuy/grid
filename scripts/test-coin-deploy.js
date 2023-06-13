@@ -11,16 +11,17 @@ async function main() {
   const TestCoin = await hre.ethers.getContractFactory("TestCoin");
   let name = "TEST ETH";
   let symbol = "TETH";
+  let decimals = 18;
   const totalSupply = "100000000000000000000000000"
-  const teth = await TestCoin.deploy(name,symbol,totalSupply);
+  const teth = await TestCoin.deploy(name,symbol,totalSupply,decimals);
   await teth.deployed();
   console.log("TETH address is :",teth.address);
 
 
   name = "TEST USDC";
   symbol = "TUSDC";
-
-  const tusdc = await TestCoin.deploy(name,symbol,totalSupply);
+  decimals = 6;
+  const tusdc = await TestCoin.deploy(name,symbol,totalSupply,decimals);
   await tusdc.deployed();
   console.log("TUSDC address is :",tusdc.address);
 
