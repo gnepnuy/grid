@@ -7,24 +7,18 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-periphery/contracts/libraries/OracleLibrary.sol";
+import "@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "./IDecimalERC20.sol";
-import "./SwapRouter.sol";
 import "hardhat/console.sol";
 
 
 
 
-//这里本想写网格交易的方法，写着写着又衍生出抄底的策略
-//索性先不想那么多，直接根据币安的现货网格来吧，存入的起始资金固定为usdc，
-//创建网格的时候拿一半的usdc换成eth,这样就能得到一个起始价，这个价格就变成一个游标了
-//再来说说抄底策略，可以限定从什么价格开始，或者时间，这里又可以延伸出卖出策略
-// 写到后边发现之前设想的方式存在问题，如果用一个订单来记录买与卖两部分数据不大好，
-//不大好体现在更复杂，数据显得比较乱，所以决定把买与卖的数据分开为两个订单来存储，
-//这样也直接实现了，抄底策略跟卖出策略
+contract Grid is Context, ReentrancyGuard{
 
-contract Grid is Context, ReentrancyGuard, SwapRouter{
-
+    address public immutable swap_router;
+    address public immutable factory;
     address public immutable weth;
     address public immutable stable;//稳定币，usds
     uint24 public immutable fee;//制定池子手续费
@@ -75,13 +69,16 @@ contract Grid is Context, ReentrancyGuard, SwapRouter{
 
     constructor(
         address _factory,
+        address _swap_router,
         address _weth,
         address _stable,
         uint24 _fee,
         uint256 _interval_price_min,
         uint256 _grid_amount_min,
         uint256 _base_bounty_eth,
-        uint256 _base_bounty_stable) SwapRouter(_factory){
+        uint256 _base_bounty_stable){
+        factory = _factory;
+        swap_router = _swap_router;
         weth = _weth;
         stable = _stable;
         fee = _fee;
@@ -115,9 +112,9 @@ contract Grid is Context, ReentrancyGuard, SwapRouter{
         if(side == Side.Buy){
             _createBuyGrid(_min_price,_max_price,_init_amount,current_price,_interval_price,_share_amount);
         }else if (side == Side.Sell){
-            _createSellGrid(_min_price,_max_price,0,current_price,_interval_price,_share_amount);
+            _createSellGrid(_min_price,_max_price,_init_amount,_interval_price,_share_amount);
         }else{
-            _createBuyAndSellGrid(_min_price,_max_price,_init_amount,_interval_price,_share_amount);
+            _createBuyAndSellGrid(_min_price,_max_price,_init_amount,current_price,_interval_price,_share_amount);
         }
     }
 
@@ -125,37 +122,38 @@ contract Grid is Context, ReentrancyGuard, SwapRouter{
         uint256 _min_price,
         uint256 _max_price,
         uint256 _init_amount,
+        uint256 _init_price,
         uint256 _interval_price,
         uint256 _share_amount)internal{
 
-        uint256 receive_amount = _buy(_init_amount/2);
-        uint256 eth_price = _init_amount/2/receive_amount;
-        _createBuyGrid(_min_price,_max_price,_init_amount/2,eth_price,_interval_price,_share_amount);
-        uint256 eth_share_amount = _share_amount/eth_price;
-        _createSellGrid(_min_price,_max_price,receive_amount,eth_price,_interval_price,eth_share_amount);
+        _createBuyGrid(_min_price,_max_price,_init_amount/2,_init_price,_interval_price,_share_amount);
+        _createSellGrid(_min_price,_max_price,_init_amount/2,_interval_price,_share_amount);
     }
 
     function _createSellGrid(
         uint256 _min_price,
         uint256 _max_price,
         uint256 _init_amount,
-        uint256 _init_price,
         uint256 _interval_price,
         uint256 _share_amount)internal{
 
-        orders[orders.length] = Order(
+        uint256 receive_amount = _buy(_init_amount);
+        uint256 price = _getEthPrice();
+
+        uint256 share_amount = (_share_amount * (10 ** IDecimalERC20(weth).decimals())) / price;
+   
+        orders.push(Order(
             Side.Sell,
             OrderStatus.Open,
             _min_price,
             _max_price,
-            _init_amount,
-            _init_price,
-            _init_price,
+            receive_amount,
+            price,
+            price,
             _interval_price,
-            _share_amount,
-            _init_amount
-        );
-        
+            share_amount,
+            receive_amount
+        ));
         orderToOwner[orders.length - 1] = _msgSender();
         emit CreateOrder(_msgSender(),orders.length - 1,_init_amount,Side.Sell);
     }
@@ -351,7 +349,7 @@ contract Grid is Context, ReentrancyGuard, SwapRouter{
     }
 
     function _getEthPrice()internal view returns (uint256 price){
-        (, int24 tick,,,,,) = IUniswapV3Pool(getPool(weth,stable,fee)).slot0();
+        (, int24 tick,,,,,) = IUniswapV3Pool(_getPool(weth,stable,fee)).slot0();
         uint128 ethAmount = 1 ether;
         price = OracleLibrary.getQuoteAtTick(tick,ethAmount,weth,stable);
     }
@@ -371,8 +369,8 @@ contract Grid is Context, ReentrancyGuard, SwapRouter{
     }
 
     function  _swap(address token_in,address token_out,uint256 amount_in)internal{
-        ExactInputSingleParams memory params = 
-            ExactInputSingleParams({
+        ISwapRouter.ExactInputSingleParams memory params = 
+            ISwapRouter.ExactInputSingleParams({
                 tokenIn: token_in,
                 tokenOut: token_out,
                 fee: fee,
@@ -382,8 +380,12 @@ contract Grid is Context, ReentrancyGuard, SwapRouter{
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0
             });
-        exactInputSingle(params);
+        IERC20(stable).approve(swap_router,amount_in);
+        ISwapRouter(swap_router).exactInputSingle(params);
     }
 
+    function _getPool(address tokenA,address tokenB,uint24 _fee) internal view returns(address pool){
+        pool = PoolAddress.computeAddress(factory,PoolAddress.getPoolKey(tokenA,tokenB,_fee));
+    }   
 
 }

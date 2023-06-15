@@ -4,6 +4,8 @@ const {
 } = require("@nomicfoundation/hardhat-network-helpers");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
+const { ethers } = require("hardhat");
+const erc20_abi = require("../artifacts/contracts/IDecimalERC20.sol/IDecimalERC20.json").abi;
 
 describe("Grid", function () {
   // We define a fixture to reuse the same setup in every test.
@@ -54,8 +56,13 @@ describe("Grid", function () {
     console.log(grid.address);
     console.log("fee: ",await grid.fee());
 
-    const create_grid_tx = await grid.createGrid(0,1580000000,1900000000,10000000000,10000000,1000000000);
-    
+    // const stable_contract = new ethers.Contract(stable,erc20_abi,ethers.getDefaultProvider());
+
+    // const approve_tx = await stable_contract.approve(grid.address,10000000000);
+    // console.log(approve_tx.hash);
+
+    // const create_grid_tx = await grid.createGrid(1,1580000000,1900000000,10000000000,10000000,1000000000);
+    // console.log(create_grid_tx.hash);
   }
 
 

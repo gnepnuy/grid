@@ -6,7 +6,7 @@ const erc20_abi = require("../artifacts/contracts/TestCoin.sol/TestCoin.json").a
 
 const url = "https://sepolia.infura.io/v3/74d3de6db014405388a32e51189fb6fd"; 
 let provider = new ethers.providers.JsonRpcProvider(url);
-const grid_address = "0x32818C80E4dBc248580b62d5E625037a1244ab60";
+const grid_address = "0xc9923266E7725c64FF247637B7DB0a43898FA033";
 const stable_address = "0x486022ECaF84E55989B94cF3424430d11c39Ba25";
 
 
@@ -18,29 +18,67 @@ async function main() {
     //先看看价格
     const price = (await grid_contract.getPrice()).toString()/10**6;
     console.log("current price: ",price);
-    //create grid
 
-    
-    
-    /**
-     *  Side side,
-        uint256 _min_price,
-        uint256 _max_price,
-        uint256 _init_amount,
-        uint256 _interval_price,
-        uint256 _share_amount
-     */
+    // //create buy grid
+    // const create_grid_params = {
+    //     side: 0,
+    //     min_price: "1580000000",
+    //     max_price: "1900000000",
+    //     init_amount: "10000000000",
+    //     interval_price: "10000000",
+    //     share_amount: "1000000000"
+    // };
+    // const approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
+    // console.log("approve tx: ",approve_tx.hash);
+    // await sleep(30_000);
+
+
+    // const create_grid_tx = await grid_contract.createGrid(
+    //                                 create_grid_params.side,
+    //                                 create_grid_params.min_price,
+    //                                 create_grid_params.max_price,
+    //                                 create_grid_params.init_amount,
+    //                                 create_grid_params.interval_price,
+    //                                 create_grid_params.share_amount
+    //                             );
+    // console.log("create grid tx: ",create_grid_tx.hash);
+
+    // //create sell grid
+    // const create_grid_params = {
+    //     side: 1,
+    //     min_price: "1580000000",
+    //     max_price: "1900000000",
+    //     init_amount: "10000000000",
+    //     interval_price: "10000000",
+    //     share_amount: "1000000000"
+    // };
+    // const approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
+    // console.log("approve tx: ",approve_tx.hash);
+    // await sleep(30_000);
+
+
+    // const create_grid_tx = await grid_contract.createGrid(
+    //                                 create_grid_params.side,
+    //                                 create_grid_params.min_price,
+    //                                 create_grid_params.max_price,
+    //                                 create_grid_params.init_amount,
+    //                                 create_grid_params.interval_price,
+    //                                 create_grid_params.share_amount
+    //                             );
+    // console.log("create grid tx: ",create_grid_tx.hash);
+
+    //create Bilateral grid
     const create_grid_params = {
-        side: 0,
+        side: 2,
         min_price: "1580000000",
         max_price: "1900000000",
-        init_amount: "10000000000",
+        init_amount: "15000000000",
         interval_price: "10000000",
         share_amount: "1000000000"
     };
-    // const approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
-    // console.log("approve tx: ",approve_tx.hash);
-    // sleep(20_000);
+    const approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
+    console.log("approve tx: ",approve_tx.hash);
+    await sleep(30_000);
 
 
     const create_grid_tx = await grid_contract.createGrid(

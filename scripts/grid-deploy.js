@@ -19,6 +19,7 @@ async function main() {
         uint256 _base_bounty_stable
    */
   const factory = "0x0227628f3F023bb0B980b67D528571c95c6DaC1c";
+  const router = "0xD09A412B51663a2bd29F430391e04DEcbEFDf99c";
   const weth = "0xbF820766ec149C9220D97242Da58e9Ece20CC516";
   const stable = "0x486022ECaF84E55989B94cF3424430d11c39Ba25";
   const fee = "500";
@@ -28,7 +29,7 @@ async function main() {
   const base_bounty_stable = "2000000000000000000";
 
   const Grid = await hre.ethers.getContractFactory("Grid");
-  const grid = await Grid.deploy(factory,weth,stable,fee,interval_price_min,grid_amount_min,base_bounty_eth,base_bounty_stable);
+  const grid = await Grid.deploy(factory,router,weth,stable,fee,interval_price_min,grid_amount_min,base_bounty_eth,base_bounty_stable);
   await grid.deployed();
 
   console.log(" the grid contract address is: ",grid.address);
