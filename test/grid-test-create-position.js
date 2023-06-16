@@ -25,12 +25,9 @@ async function main() {
   // console.log("buy hash: ",buy_tx.hash);
 
   //sell
-  // const sell_tx = await grid_contract.sell(1);
-  // console.log("sell hash: ",sell_tx.hash);
+  const sell_tx = await grid_contract.sell(5);
+  console.log("sell hash: ",sell_tx.hash);
 
-  //close position
-  const close_tx = await grid_contract.closePosition(2);
-  console.log("close hash: " ,close_tx.hash);
 
 
 

@@ -19,56 +19,56 @@ async function main() {
     const price = (await grid_contract.getPrice()).toString()/10**6;
     console.log("current price: ",price);
 
-    // //create buy grid
-    let create_grid_params = {
-        side: 0,
-        min_price: "1580000000",
-        max_price: "1900000000",
-        init_amount: "10000000000",
-        interval_price: "10000000",
-        share_amount: "1000000000"
-    };
-    let approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
-    console.log("approve tx: ",approve_tx.hash);
-    await sleep(30_000);
+    // // //create buy grid
+    // let create_grid_params = {
+    //     side: 0,
+    //     min_price: "1580000000",
+    //     max_price: "1900000000",
+    //     init_amount: "10000000000",
+    //     interval_price: "10000000",
+    //     share_amount: "1000000000"
+    // };
+    // let approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
+    // console.log("approve tx: ",approve_tx.hash);
+    // await sleep(30_000);
 
 
-    let create_grid_tx = await grid_contract.createGrid(
-                                    create_grid_params.side,
-                                    create_grid_params.min_price,
-                                    create_grid_params.max_price,
-                                    create_grid_params.init_amount,
-                                    create_grid_params.interval_price,
-                                    create_grid_params.share_amount
-                                );
-    console.log("create grid tx: ",create_grid_tx.hash);
-    await sleep(20_000);
+    // let create_grid_tx = await grid_contract.createGrid(
+    //                                 create_grid_params.side,
+    //                                 create_grid_params.min_price,
+    //                                 create_grid_params.max_price,
+    //                                 create_grid_params.init_amount,
+    //                                 create_grid_params.interval_price,
+    //                                 create_grid_params.share_amount
+    //                             );
+    // console.log("create grid tx: ",create_grid_tx.hash);
+    // await sleep(20_000);
 
-    // //create sell grid
-    create_grid_params = {
-        side: 1,
-        min_price: "1580000000",
-        max_price: "1900000000",
-        init_amount: "10000000000",
-        interval_price: "10000000",
-        share_amount: "1000000000"
-    };
-    approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
-    console.log("approve tx: ",approve_tx.hash);
-    await sleep(30_000);
+    // // //create sell grid
+    // create_grid_params = {
+    //     side: 1,
+    //     min_price: "1580000000",
+    //     max_price: "1900000000",
+    //     init_amount: "10000000000",
+    //     interval_price: "10000000",
+    //     share_amount: "1000000000"
+    // };
+    // approve_tx = await stable_contract.approve(grid_address,create_grid_params.init_amount);
+    // console.log("approve tx: ",approve_tx.hash);
+    // await sleep(30_000);
 
 
-    create_grid_tx = await grid_contract.createGrid(
-                                    create_grid_params.side,
-                                    create_grid_params.min_price,
-                                    create_grid_params.max_price,
-                                    create_grid_params.init_amount,
-                                    create_grid_params.interval_price,
-                                    create_grid_params.share_amount
-                                );
-    console.log("create grid tx: ",create_grid_tx.hash);
+    // create_grid_tx = await grid_contract.createGrid(
+    //                                 create_grid_params.side,
+    //                                 create_grid_params.min_price,
+    //                                 create_grid_params.max_price,
+    //                                 create_grid_params.init_amount,
+    //                                 create_grid_params.interval_price,
+    //                                 create_grid_params.share_amount
+    //                             );
+    // console.log("create grid tx: ",create_grid_tx.hash);
 
-    await sleep(20_000);
+    // await sleep(20_000);
 
     //create Bilateral grid
     create_grid_params = {
