@@ -25,8 +25,9 @@ contract Grid is Context, ReentrancyGuard{
     uint256 public immutable interval_price_min;//最小价格区间
     uint256 public immutable grid_amount_min;//最小的网格数量
 
-    uint256 public base_bounty_eth;//基础gas费，eth计价
-    uint256 public base_bounty_stable;//基础gas费，usds计价
+    uint256 public immutable base_bounty_eth;//基础gas费，eth计价
+    uint256 public immutable base_bounty_stable;//基础gas费，usds计价
+    uint16 public immutable slippage;
 
     Order[] public orders;//网格订单数组
     Position[] public positions;//仓位
@@ -35,7 +36,7 @@ contract Grid is Context, ReentrancyGuard{
 
     enum Side {Buy,Sell,Bilateral}
     enum PositionStatus {InPosition,Over}
-    enum OrderStatus {Open,Stop,Close}
+    enum OrderStatus {Open,Close}
 
     struct Position {
         Side side;
@@ -76,7 +77,8 @@ contract Grid is Context, ReentrancyGuard{
         uint256 _interval_price_min,
         uint256 _grid_amount_min,
         uint256 _base_bounty_eth,
-        uint256 _base_bounty_stable){
+        uint256 _base_bounty_stable,
+        uint16 _slippage){
         factory = _factory;
         swap_router = _swap_router;
         weth = _weth;
@@ -86,6 +88,7 @@ contract Grid is Context, ReentrancyGuard{
         grid_amount_min = _grid_amount_min;
         base_bounty_eth = _base_bounty_eth;
         base_bounty_stable = _base_bounty_stable;
+        slippage = _slippage;
     }
 
     function createGrid(
@@ -181,16 +184,6 @@ contract Grid is Context, ReentrancyGuard{
         emit CreateOrder(_msgSender(),orders.length - 1,_init_amount,Side.Buy);
     }
 
-
-    function stopOrder(uint256 _order_id)external nonReentrant {
-        Order storage order = orders[_order_id];
-        require(order.min_price > 0,"order dose not exist");
-        require(order.status == OrderStatus.Open,"order not opened");
-        require(orderToOwner[_order_id] == _msgSender(),"not your order");
-        order.status = OrderStatus.Stop;
-        emit StopOrder(_order_id,_msgSender());
-    }
-
     function closeOrder(uint256 _order_id)external nonReentrant {
         Order storage order = orders[_order_id];
         require(order.min_price > 0,"order dose not exist");
@@ -247,17 +240,20 @@ contract Grid is Context, ReentrancyGuard{
         require(order.balance >= order.share_amount,"insufficient balance");
         order.balance -= order.share_amount;
         uint256 eth_amount = _buy(order.share_amount);
-        order.last_price = order.share_amount/eth_amount;
-
-        positions[positions.length] = Position(
+        uint256 tx_price = _getPriceByTx(order.share_amount,eth_amount,
+                                            IDecimalERC20(stable).decimals(),IDecimalERC20(weth).decimals());
+        require(order.last_price - order.interval_price > tx_price,"the price is not within the buying range");
+        order.last_price = tx_price;
+        
+        positions.push(Position(
             Side.Buy,
             PositionStatus.InPosition,
             _order_id,
             0,
-            order.last_price,
+            tx_price,
             eth_amount,
             _msgSender()
-        );
+        ));
         orderToPosition[_order_id].push(positions.length - 1);
         emit CreatePosition(_order_id,_msgSender(),positions.length - 1,eth_amount,Side.Buy);        
     }
@@ -274,22 +270,23 @@ contract Grid is Context, ReentrancyGuard{
 
         order.balance -= order.share_amount;
         uint256 stable_amount = _sell(order.share_amount);
-        order.last_price = stable_amount/order.share_amount;
-        positions[positions.length] = Position(
+        uint256 tx_price = _getPriceByTx(stable_amount,order.share_amount,
+                                            IDecimalERC20(stable).decimals(),IDecimalERC20(weth).decimals());
+        require(order.last_price + order.interval_price < tx_price,"the price is not within the selling range");
+        order.last_price = tx_price;
+
+        positions.push(Position(
             Side.Sell,
             PositionStatus.InPosition,
             _order_id,
             0,
-            order.last_price,
+            tx_price,
             stable_amount,
             _msgSender()
-        );
+        ));
         orderToPosition[_order_id].push(positions.length - 1);
         emit CreatePosition(_order_id,_msgSender(),positions.length - 1,stable_amount,Side.Sell);        
     }
-
- 
-
 
     function closePosition(uint256 _position_id)external nonReentrant{
         Position storage position = positions[_position_id];
@@ -312,7 +309,8 @@ contract Grid is Context, ReentrancyGuard{
                 IERC20(weth).transfer(_msgSender(),bounty);
             }
             
-            order.last_price = position.amount/eth_amount;
+            order.last_price = _getPriceByTx(position.amount,eth_amount,
+                                    IDecimalERC20(stable).decimals(),IDecimalERC20(weth).decimals());
             if(order.status == OrderStatus.Close){
                 IERC20(weth).transfer(orderToOwner[position.order_id],eth_amount - bounty);
             }else {
@@ -332,7 +330,8 @@ contract Grid is Context, ReentrancyGuard{
                 IERC20(stable).transfer(_msgSender(),bounty);
             }
             
-            order.last_price = stable_amount/position.amount;
+            order.last_price = _getPriceByTx(stable_amount,position.amount,
+                                    IDecimalERC20(stable).decimals(),IDecimalERC20(weth).decimals());
             if(order.status == OrderStatus.Close){
                 IERC20(stable).transfer(orderToOwner[position.order_id],stable_amount - bounty);
             }else {
@@ -341,6 +340,7 @@ contract Grid is Context, ReentrancyGuard{
         }
 
         position.status = PositionStatus.Over;
+        position.selling_price = order.last_price;
         emit ClosePosition(_position_id,position.order_id,_msgSender(),income,position.side);
     }
 
@@ -348,10 +348,21 @@ contract Grid is Context, ReentrancyGuard{
         price = _getEthPrice();
     }
 
+    function _getPriceByTx(uint256 _base_amount,uint256 _quote_amount,uint8 _base_decimals,uint8 _quote_decimals) 
+        internal pure returns(uint256 price){
+        //if no decimals => _base_amount/_quote_amount
+        price = _base_amount * 10 ** _base_decimals / (_quote_amount * 10 ** _base_decimals / 10 ** _quote_decimals);
+    }
+
     function _getEthPrice()internal view returns (uint256 price){
         (, int24 tick,,,,,) = IUniswapV3Pool(_getPool(weth,stable,fee)).slot0();
         uint128 ethAmount = 1 ether;
         price = OracleLibrary.getQuoteAtTick(tick,ethAmount,weth,stable);
+    }
+
+    function _getAmountOut(address _token_in,address _token_out,uint256 _amount_in,uint24 _fee) internal view returns (uint256 amountOut){
+        (, int24 tick,,,,,) = IUniswapV3Pool(_getPool(_token_in,_token_out,_fee)).slot0();
+        amountOut = OracleLibrary.getQuoteAtTick(tick,uint128(_amount_in),_token_in,_token_out);
     }
 
     function _buy(uint256 amount)internal returns (uint256 receive_amount){
@@ -369,6 +380,8 @@ contract Grid is Context, ReentrancyGuard{
     }
 
     function  _swap(address token_in,address token_out,uint256 amount_in)internal{
+        uint256 quotation = _getAmountOut(token_in,token_out,amount_in,fee);
+        quotation = quotation - (quotation * slippage / 10000);
         ISwapRouter.ExactInputSingleParams memory params = 
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: token_in,
@@ -377,11 +390,12 @@ contract Grid is Context, ReentrancyGuard{
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: amount_in,
-                amountOutMinimum: 0,
+                amountOutMinimum: quotation,
                 sqrtPriceLimitX96: 0
             });
-        IERC20(stable).approve(swap_router,amount_in);
+        IERC20(token_in).approve(swap_router,amount_in);
         ISwapRouter(swap_router).exactInputSingle(params);
+
     }
 
     function _getPool(address tokenA,address tokenB,uint24 _fee) internal view returns(address pool){
