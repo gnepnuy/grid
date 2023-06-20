@@ -6,7 +6,7 @@ const erc20_abi = require("../artifacts/contracts/TestCoin.sol/TestCoin.json").a
 
 const url = "https://sepolia.infura.io/v3/74d3de6db014405388a32e51189fb6fd"; 
 let provider = new ethers.providers.JsonRpcProvider(url);
-const grid_address = "0x2f9AF601363DE195df36B2c9D7B3A020B2c0Ecbc";
+const grid_address = "0x8B2B6D2dc83C45968B14185C8697f1B4858E9b00";
 const stable_address = "0x486022ECaF84E55989B94cF3424430d11c39Ba25";
 
 
@@ -21,7 +21,7 @@ async function main() {
   console.log("current price: ",price);
 
   //close position
-  const close_tx = await grid_contract.closePosition(8);
+  const close_tx = await grid_contract.closePosition(1);
   console.log("close hash: " ,close_tx.hash);
 
 
