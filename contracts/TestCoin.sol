@@ -40,6 +40,8 @@ contract TestCoin is Context, IERC20 {
 
     string private _name;
     string private _symbol;
+
+    
     uint8 private _decimals;
 
     /**
